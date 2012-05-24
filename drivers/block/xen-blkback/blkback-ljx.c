@@ -45,6 +45,7 @@
 #include <asm/xen/hypervisor.h>
 #include <asm/xen/hypercall.h>
 #include "common.h"
+#include "proc-ljx.h"
 
 /*
  * These are rather arbitrary. They are fairly large because adjacent requests
@@ -521,7 +522,6 @@ static void reflect_on_bio(struct bio *bio) {
 static void end_block_io_op(struct bio *bio, int error)
 {
 	__end_block_io_op(bio->bi_private, error);
-	//if (atomic_read(&((struct pending_req *)bio->bi_private)->pendcnt) == 0)
 	reflect_on_bio(bio);
 	bio_put(bio);
 }
@@ -892,6 +892,17 @@ static int __init xen_blkif_init(void)
 	rc = xen_blkif_xenbus_init();
 	if (rc)
 		goto failed_init;
+
+	/* initialize procfs file */
+	proc_file = create_proc_entry(procfs_name, 0644, NULL);
+	if (proc_file == NULL) {
+		printk(KERN_ALERT "Error: could not initialize /proc/%s\n", procfs_name);
+	}
+	proc_file->read_proc	= procfile_read;
+	proc_file->mode		= S_IFREG | S_IRUGO;
+	proc_file->uid		= 0;
+	proc_file->gid		= 0;
+	proc_file->size		= 37;
 
 	return 0;
 
