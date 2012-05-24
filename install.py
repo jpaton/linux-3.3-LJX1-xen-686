@@ -6,7 +6,7 @@ import os, sys
 remote = "root@sqtest"
 
 def do(cmd):
-    return call(extend(cmd.split()))
+    return call(cmd.split())
 
 def reboot():
     """
@@ -19,7 +19,7 @@ def copy(filename):
     """
     Copy kernel at <filename> to remote
     """
-    cmd = "scp %s %s:~/" % (remote, filename)
+    cmd = "scp %s %s:~/" % (filename, remote)
     return do(cmd)
 
 def install(filename):
@@ -44,7 +44,7 @@ def launch(filename):
     Copies the kernel over, installs it, and reboots the remote
     """
     if not copy_and_install(filename):
-        return reboot(filename)
+        return reboot()
     else:
         return True
 
@@ -68,8 +68,7 @@ def main():
         if len(sys.argv) != 2:
             usage_exit()
         status = reboot()
-   return status 
-        
+    return status 
 
 if __name__ == '__main__':
     sys.exit(main())
