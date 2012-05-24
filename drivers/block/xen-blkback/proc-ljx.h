@@ -9,6 +9,7 @@
 
 extern struct proc_dir_entry *proc_file;
 
-int procfile_read(char *, char **, off_t, int, int *, void *);
+extern int ljx_print(const char *, ...);
+extern void ljx_init(void);
 
 #endif

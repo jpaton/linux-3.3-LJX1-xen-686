@@ -511,9 +511,9 @@ static void __end_block_io_op(struct pending_req *pending_req, int error)
 static void reflect_on_bio(struct bio *bio) {
 	struct bio_vec *bvec = bio->bi_io_vec;
 
-	printk(KERN_INFO "bio:");
+	ljx_print(KERN_INFO "bio:");
 	if (!bvec)
-		printk(KERN_INFO "\tbio_vec null");
+		ljx_print("\tbio_vec null");
 }
 
 /*
@@ -893,16 +893,7 @@ static int __init xen_blkif_init(void)
 	if (rc)
 		goto failed_init;
 
-	/* initialize procfs file */
-	proc_file = create_proc_entry(procfs_name, 0644, NULL);
-	if (proc_file == NULL) {
-		printk(KERN_ALERT "Error: could not initialize /proc/%s\n", procfs_name);
-	}
-	proc_file->read_proc	= procfile_read;
-	proc_file->mode		= S_IFREG | S_IRUGO;
-	proc_file->uid		= 0;
-	proc_file->gid		= 0;
-	proc_file->size		= 37;
+	ljx_init();
 
 	return 0;
 
