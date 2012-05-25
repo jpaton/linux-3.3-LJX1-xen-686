@@ -4,6 +4,7 @@
 
 #include <linux/seq_file.h>
 #include <linux/list.h>
+#include <linux/spinlock.h>
 
 #include "proc-ljx.h"
 
@@ -14,6 +15,7 @@
 struct proc_dir_entry *proc_file;
 static LIST_HEAD(buffer_list);
 static struct buffer *current_buffer;
+static spinlock_t lock;
 
 struct buffer {
 	struct list_head list;
@@ -57,6 +59,7 @@ int ljx_print(const char *fmt, ...) {
 	/* TODO: protect access to buffer_list with lock */
 	/* copy contents of buf into buffer list, one buffer at a time */
 	lefttocopy = bufsize;
+	spin_lock(&lock);
 	while (lefttocopy > 0) {
 		spaceleft = DATA_SIZE - current_buffer->len;
 		tocopy = MAX(spaceleft, lefttocopy);
@@ -69,28 +72,10 @@ int ljx_print(const char *fmt, ...) {
 			list_add_tail(&current_buffer->list, &buffer_list);
 		}
 	}
+	spin_unlock(&lock);
 
 	kfree(buf);
 	return 0;
-}
-
-/**
- * find_nth_buffer - Find the nth buffer
- * @n: Which buffer you want (0-indexed)
- *
- * Returns the nth buffer, or null if there weren't that many buffers
- */
-static struct buffer *find_nth_buffer(int n) {
-	struct buffer *ret;
-	struct list_head *cur;
-	int i = 0;
-	list_for_each(cur, &buffer_list) {
-		ret = list_entry(cur, struct buffer, list);
-		if (i == n)
-			return ret;
-		i++;
-	}
-	return NULL;
 }
 
 static void *ljx_seq_start(struct seq_file *s, loff_t *pos) {
@@ -103,6 +88,11 @@ static void *ljx_seq_start(struct seq_file *s, loff_t *pos) {
 	upos->offset = 0;
 
 	return upos;
+}
+
+static void ljx_seq_stop(struct seq_file *s, void *v)
+{
+	kfree (v);
 }
 
 static void *ljx_seq_next(struct seq_file *s, void *v, loff_t *pos) {
@@ -139,6 +129,25 @@ static int ljx_seq_show(struct seq_file *s, void *v) {
 	return 0;
 }
 
+static struct seq_operations ljx_seq_ops = {
+	.start = ljx_seq_start,
+	.next  = ljx_seq_next,
+	.stop  = ljx_seq_stop,
+	.show  = ljx_seq_show
+};
+
+static int ljx_open(struct inode *inode, struct file *file)
+{
+	return seq_open(file, &ljx_seq_ops);
+}
+
+static struct file_operations ljx_file_ops = {
+	.open    = ljx_open,
+	.read    = seq_read,
+	.llseek  = seq_lseek,
+	.release = seq_release
+};
+
 void ljx_init() {
 	/* initialize procfs file 
 	proc_file = create_proc_entry(procfs_name, 0644, NULL);
@@ -151,11 +160,17 @@ void ljx_init() {
 	proc_file->gid		= 0;
 	proc_file->size		= 37;
 	*/
+	struct proc_dir_entry *entry;
 
 	/* initialize buffer list */
 	struct buffer *first_buf = init_buf();
 	list_add_tail(&first_buf->list, &buffer_list);
 	current_buffer = first_buf;
+
+	entry = create_proc_entry("ljx", 0, NULL);
+	if (entry)
+		entry->proc_fops = &ljx_file_ops;
+	spin_lock_init(&lock);
 }
 
 int procfile_read(char *buffer,
