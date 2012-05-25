@@ -39,24 +39,28 @@ struct user_pos {
 
 int ljx_print(const char *fmt, ...) {
 	va_list args;
-	int written;
 	int lefttocopy;
 	int tocopy;
-	int bufsize = 0;
+	int wanttowrite;
+	int bufsize = 512;
 	int spaceleft;
-	char *buf = NULL;
+	char *buf;
 
-	do {
-		/* keep allocating a larger buffer until we get one large enough */
-		bufsize += sizeof(char) * 1024;
+
+	buf = kmalloc(bufsize, 0);
+	va_start(args, fmt);
+	wanttowrite = vsnprintf(buf, bufsize, fmt, args);
+	va_end(args);
+	if (wanttowrite > bufsize) {
+		/* get bigger buffer, try again */
 		kfree(buf);
-		buf = kmalloc(bufsize, 0);
+		buf = kmalloc(wanttowrite, 0);
 		va_start(args, fmt);
-		written = vsnprintf(buf, bufsize, fmt, args);
+		wanttowrite = vsnprintf(buf, wanttowrite, fmt, args);
 		va_end(args);
-	} while (written > bufsize);
+	}
+	bufsize = wanttowrite;
 
-	/* TODO: protect access to buffer_list with lock */
 	/* copy contents of buf into buffer list, one buffer at a time */
 	lefttocopy = bufsize;
 	spin_lock(&lock);
