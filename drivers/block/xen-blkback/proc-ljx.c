@@ -16,7 +16,7 @@
 struct proc_dir_entry *proc_file;
 static LIST_HEAD(buffer_list);
 static struct buffer *current_buffer;
-static spinlock_t lock;
+static DEFINE_SPINLOCK(lock);
 
 struct buffer {
 	struct list_head list;
@@ -66,7 +66,7 @@ int ljx_print(const char *fmt, ...) {
 
 	/* copy contents of buf into buffer list, one buffer at a time */
 	lefttocopy = bufsize;
-	spin_lock(&lock);
+	spin_lock_irqsave(&lock);
 	while (lefttocopy > 0) {
 		spaceleft = DATA_SIZE - current_buffer->len;
 		tocopy = MIN(spaceleft, lefttocopy);
@@ -79,7 +79,7 @@ int ljx_print(const char *fmt, ...) {
 			list_add_tail(&current_buffer->list, &buffer_list);
 		}
 	}
-	spin_unlock(&lock);
+	spin_unlock_irqrestore(&lock);
 
 	kfree(buf);
 	return 0;
