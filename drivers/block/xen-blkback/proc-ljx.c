@@ -11,6 +11,7 @@
 #define DATA_SIZE 1024
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
+#define MIN(a, b) ((a) > (b) ? (b) : (a))
 
 struct proc_dir_entry *proc_file;
 static LIST_HEAD(buffer_list);
@@ -47,14 +48,16 @@ int ljx_print(const char *fmt, ...) {
 	char *buf;
 
 
-	buf = kmalloc(bufsize, 0);
+	if ((buf = kmalloc(bufsize, GFP_KERNEL)) == NULL)
+		goto error;
 	va_start(args, fmt);
 	wanttowrite = vsnprintf(buf, bufsize, fmt, args);
 	va_end(args);
 	if (wanttowrite > bufsize) {
 		/* get bigger buffer, try again */
 		kfree(buf);
-		buf = kmalloc(wanttowrite, 0);
+		if ((buf = kmalloc(wanttowrite, GFP_KERNEL)) == NULL)
+			goto error;
 		va_start(args, fmt);
 		wanttowrite = vsnprintf(buf, wanttowrite, fmt, args);
 		va_end(args);
@@ -66,7 +69,7 @@ int ljx_print(const char *fmt, ...) {
 	spin_lock(&lock);
 	while (lefttocopy > 0) {
 		spaceleft = DATA_SIZE - current_buffer->len;
-		tocopy = MAX(spaceleft, lefttocopy);
+		tocopy = MIN(spaceleft, lefttocopy);
 		memcpy(&current_buffer->buf[current_buffer->len], buf, tocopy);
 		buf += tocopy;
 		lefttocopy -= tocopy;
@@ -80,6 +83,10 @@ int ljx_print(const char *fmt, ...) {
 
 	kfree(buf);
 	return 0;
+
+error:
+	printk(KERN_INFO, "LJX_print failed.");
+	return -ENOMEM;
 }
 
 static void *ljx_seq_start(struct seq_file *s, loff_t *pos) {
