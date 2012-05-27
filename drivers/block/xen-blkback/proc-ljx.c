@@ -16,7 +16,7 @@
 struct proc_dir_entry *proc_file;
 static LIST_HEAD(buffer_list);
 static struct buffer *current_buffer;
-static DEFINE_SPINLOCK(lock);
+static DEFINE_SPINLOCK(print_lock);
 
 struct buffer {
 	struct list_head list;
@@ -27,7 +27,7 @@ struct buffer {
 static struct buffer *init_buf(void) {
 	struct buffer *ret = kmalloc(sizeof(char) * DATA_SIZE, 0);
 	ret->len	= 0,
-	ret->buf	= (char *)kmalloc(sizeof(char) * DATA_SIZE, 0),
+	ret->buf	= kmalloc(sizeof(char) * DATA_SIZE, 0),
 	memset(ret->buf, 0, sizeof(char) * DATA_SIZE);
 
 	return ret;
@@ -45,6 +45,7 @@ int ljx_print(const char *fmt, ...) {
 	int wanttowrite;
 	int bufsize = 512;
 	int spaceleft;
+	unsigned long lock_flags;
 	char *buf;
 
 
@@ -66,20 +67,21 @@ int ljx_print(const char *fmt, ...) {
 
 	/* copy contents of buf into buffer list, one buffer at a time */
 	lefttocopy = bufsize;
-	spin_lock_irqsave(&lock);
+	spin_lock_irqsave(&print_lock, lock_flags);
 	while (lefttocopy > 0) {
 		spaceleft = DATA_SIZE - current_buffer->len;
 		tocopy = MIN(spaceleft, lefttocopy);
 		memcpy(&current_buffer->buf[current_buffer->len], buf, tocopy);
 		buf += tocopy;
 		lefttocopy -= tocopy;
+		current_buffer->len += tocopy;
 		if (lefttocopy > 0) {
 			/* need to allocate a new buffer */
 			current_buffer = init_buf();
 			list_add_tail(&current_buffer->list, &buffer_list);
 		}
 	}
-	spin_unlock_irqrestore(&lock);
+	spin_unlock_irqrestore(&print_lock, lock_flags);
 
 	kfree(buf);
 	return 0;
@@ -181,7 +183,6 @@ void ljx_init() {
 	entry = create_proc_entry("ljx", 0, NULL);
 	if (entry)
 		entry->proc_fops = &ljx_file_ops;
-	spin_lock_init(&lock);
 }
 
 int procfile_read(char *buffer,
