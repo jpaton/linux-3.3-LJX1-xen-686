@@ -39,6 +39,7 @@
 #include <linux/list.h>
 #include <linux/delay.h>
 #include <linux/freezer.h>
+#include <linux/buffer_head.h>
 
 #include <xen/events.h>
 #include <xen/page.h>
@@ -506,14 +507,60 @@ static void __end_block_io_op(struct pending_req *pending_req, int error)
 }
 
 /*
+ * if the first ten bytes are all printable ascii, return a copy of them;
+ * otherwise, return NULL
+ */
+static char *try_ascii(struct bio *bio) {
+	char *ascii;
+	struct bio_vec *bvl;
+	struct buffer_head *bhead;
+	int seg_idx, byte_idx, intra_idx;
+
+	ascii = kmalloc(sizeof(char) * 11, GFP_KERNEL);
+	memset(ascii, 0, 11);
+
+	byte_idx = 0;
+	__bio_for_each_segment(bvl, bio, seg_idx, 0) {
+		intra_idx = 0;
+		bhead = (struct buffer_head *)bvl->bv_page->private;
+		for (intra_idx = 0; byte_idx < 10 && intra_idx < bhead->b_size; intra_idx++, byte_idx++) 
+			if (bhead->b_data[intra_idx] >= 32 && 
+				bhead->b_data[intra_idx] <= 126)
+				ascii[byte_idx] = bhead->b_data[intra_idx];
+			else {
+				kfree(ascii);
+				return NULL;
+			}
+		if (byte_idx >= 10)
+			break;
+	}
+
+	return ascii;
+}
+
+/*
  * reflect on the bio, printk-ing some stuff about it
  */
 static void reflect_on_bio(struct bio *bio) {
 	struct bio_vec *bvec = bio->bi_io_vec;
+	//struct page *bv_page;
+	//unsigned int bv_len, bv_offset;
+	char *ascii;
 
-	ljx_print(KERN_INFO "bio:");
+	printk(KERN_INFO "bio:");
 	if (!bvec)
-		ljx_print("\tbio_vec null");
+		printk(KERN_INFO "\tbio_vec null");
+	else {
+		// bv_page = bvec->bv_page;
+		// bv_len = bvec->bv_len;
+		// bv_offset = bvec->bv_offset;
+		printk(KERN_INFO "\tbi_sector: %x", (unsigned int) bio->bi_sector);
+		if ((ascii = try_ascii(bio))) {
+			/* all the data are printable */
+			printk(KERN_INFO "\tdata: %s", ascii);
+			kfree(ascii);
+		}
+	}
 }
 
 /*
@@ -893,7 +940,7 @@ static int __init xen_blkif_init(void)
 	if (rc)
 		goto failed_init;
 
-	ljx_init();
+	//ljx_init();
 
 	return 0;
 

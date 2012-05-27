@@ -16,7 +16,6 @@
 struct proc_dir_entry *proc_file;
 static LIST_HEAD(buffer_list);
 static struct buffer *current_buffer;
-static DEFINE_SPINLOCK(print_lock);
 
 struct buffer {
 	struct list_head list;
@@ -37,59 +36,6 @@ struct user_pos {
 	struct buffer *buf;
 	loff_t offset;
 };
-
-int ljx_print(const char *fmt, ...) {
-	va_list args;
-	int lefttocopy;
-	int tocopy;
-	int wanttowrite;
-	int bufsize = 512;
-	int spaceleft;
-	unsigned long lock_flags;
-	char *buf;
-
-
-	if ((buf = kmalloc(bufsize, GFP_KERNEL)) == NULL)
-		goto error;
-	va_start(args, fmt);
-	wanttowrite = vsnprintf(buf, bufsize, fmt, args);
-	va_end(args);
-	if (wanttowrite > bufsize) {
-		/* get bigger buffer, try again */
-		kfree(buf);
-		if ((buf = kmalloc(wanttowrite, GFP_KERNEL)) == NULL)
-			goto error;
-		va_start(args, fmt);
-		wanttowrite = vsnprintf(buf, wanttowrite, fmt, args);
-		va_end(args);
-	}
-	bufsize = wanttowrite;
-
-	/* copy contents of buf into buffer list, one buffer at a time */
-	lefttocopy = bufsize;
-	spin_lock_irqsave(&print_lock, lock_flags);
-	while (lefttocopy > 0) {
-		spaceleft = DATA_SIZE - current_buffer->len;
-		tocopy = MIN(spaceleft, lefttocopy);
-		memcpy(&current_buffer->buf[current_buffer->len], buf, tocopy);
-		buf += tocopy;
-		lefttocopy -= tocopy;
-		current_buffer->len += tocopy;
-		if (lefttocopy > 0) {
-			/* need to allocate a new buffer */
-			current_buffer = init_buf();
-			list_add_tail(&current_buffer->list, &buffer_list);
-		}
-	}
-	spin_unlock_irqrestore(&print_lock, lock_flags);
-
-	kfree(buf);
-	return 0;
-
-error:
-	printk(KERN_INFO, "LJX_print failed.");
-	return -ENOMEM;
-}
 
 static void *ljx_seq_start(struct seq_file *s, loff_t *pos) {
 	struct user_pos *upos;
