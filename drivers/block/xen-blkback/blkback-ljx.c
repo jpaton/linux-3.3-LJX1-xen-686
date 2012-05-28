@@ -510,32 +510,44 @@ static void __end_block_io_op(struct pending_req *pending_req, int error)
  * if the first ten bytes are all printable ascii, return a copy of them;
  * otherwise, return NULL
  */
-static char *try_ascii(struct bio *bio) {
-	char *ascii;
+static bool try_ascii(struct bio *bio, char *ascii) {
 	struct bio_vec *bvl;
 	struct buffer_head *bhead;
 	int seg_idx, byte_idx, intra_idx;
 
-	ascii = kmalloc(sizeof(char) * 11, GFP_KERNEL);
 	memset(ascii, 0, 11);
 
 	byte_idx = 0;
 	__bio_for_each_segment(bvl, bio, seg_idx, 0) {
+		printk(KERN_INFO "\tfor loop idx %d", seg_idx);
 		intra_idx = 0;
+		if (bvl->bv_page == NULL) {
+			printk(KERN_INFO "\tbvl->bv_page was NULL");
+			return false;
+		}
+		else 
+			printk(KERN_INFO "\tbvl->bv_page not NULL");
 		bhead = (struct buffer_head *)bvl->bv_page->private;
-		for (intra_idx = 0; byte_idx < 10 && intra_idx < bhead->b_size; intra_idx++, byte_idx++) 
+		if (bhead == NULL) {
+			printk(KERN_INFO "\tbvl->bv_page->private was NULL");
+			return false;
+		}
+		else 
+			printk(KERN_INFO "\tbvl->bv_page->private not NULL");
+		for (intra_idx = 0; byte_idx < 10 && intra_idx < bhead->b_size; intra_idx++, byte_idx++) {
+			printk(KERN_INFO "\t\tintra_idx %d", intra_idx);
 			if (bhead->b_data[intra_idx] >= 32 && 
 				bhead->b_data[intra_idx] <= 126)
 				ascii[byte_idx] = bhead->b_data[intra_idx];
 			else {
-				kfree(ascii);
-				return NULL;
+				return false;
 			}
+		}
 		if (byte_idx >= 10)
 			break;
 	}
 
-	return ascii;
+	return true;
 }
 
 /*
@@ -545,7 +557,7 @@ static void reflect_on_bio(struct bio *bio) {
 	struct bio_vec *bvec = bio->bi_io_vec;
 	//struct page *bv_page;
 	//unsigned int bv_len, bv_offset;
-	char *ascii;
+	char ascii[10];
 
 	printk(KERN_INFO "bio:");
 	if (!bvec)
@@ -555,10 +567,9 @@ static void reflect_on_bio(struct bio *bio) {
 		// bv_len = bvec->bv_len;
 		// bv_offset = bvec->bv_offset;
 		printk(KERN_INFO "\tbi_sector: %x", (unsigned int) bio->bi_sector);
-		if ((ascii = try_ascii(bio))) {
+		if (try_ascii(bio, ascii)) {
 			/* all the data are printable */
 			printk(KERN_INFO "\tdata: %s", ascii);
-			kfree(ascii);
 		}
 	}
 }
