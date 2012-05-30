@@ -512,7 +512,7 @@ static void __end_block_io_op(struct pending_req *pending_req, int error)
  */
 static bool try_ascii(struct bio *bio, char *ascii) {
 	struct bio_vec *bvl;
-	struct buffer_head *bhead;
+	char *data;
 	int seg_idx, byte_idx, intra_idx;
 
 	memset(ascii, 0, 11);
@@ -521,28 +521,28 @@ static bool try_ascii(struct bio *bio, char *ascii) {
 	__bio_for_each_segment(bvl, bio, seg_idx, 0) {
 		printk(KERN_INFO "\tfor loop idx %d", seg_idx);
 		intra_idx = 0;
-		if (bvl->bv_page == NULL) {
-			printk(KERN_INFO "\tbvl->bv_page was NULL");
+		data = kmap_atomic(bvl->bv_page);
+		if (data == NULL) {
+			printk(KERN_INFO "\tkmap_atomic returned NULL");
 			return false;
 		}
-		else 
-			printk(KERN_INFO "\tbvl->bv_page not NULL");
-		bhead = (struct buffer_head *)bvl->bv_page->private;
-		if (bhead == NULL) {
-			printk(KERN_INFO "\tbvl->bv_page->private was NULL");
-			return false;
-		}
-		else 
-			printk(KERN_INFO "\tbvl->bv_page->private not NULL");
-		for (intra_idx = 0; byte_idx < 10 && intra_idx < bhead->b_size; intra_idx++, byte_idx++) {
+		
+		for (intra_idx = bvl->bv_offset; 
+		     byte_idx < 10 && intra_idx < bvl->bv_offset + bvl->bv_len; 
+		     intra_idx++, byte_idx++) 
+		{
 			printk(KERN_INFO "\t\tintra_idx %d", intra_idx);
-			if (bhead->b_data[intra_idx] >= 32 && 
-				bhead->b_data[intra_idx] <= 126)
-				ascii[byte_idx] = bhead->b_data[intra_idx];
+			
+			if (data[intra_idx] >= 32 && 
+				data[intra_idx] <= 126)
+				ascii[byte_idx] = data[intra_idx];
 			else {
+				kunmap_atomic(data);
 				return false;
 			}
+			
 		}
+		kunmap_atomic(data);
 		if (byte_idx >= 10)
 			break;
 	}
@@ -555,18 +555,13 @@ static bool try_ascii(struct bio *bio, char *ascii) {
  */
 static void reflect_on_bio(struct bio *bio) {
 	struct bio_vec *bvec = bio->bi_io_vec;
-	//struct page *bv_page;
-	//unsigned int bv_len, bv_offset;
-	char ascii[10];
+	char ascii[11];
 
 	printk(KERN_INFO "bio:");
 	if (!bvec)
 		printk(KERN_INFO "\tbio_vec null");
 	else {
-		// bv_page = bvec->bv_page;
-		// bv_len = bvec->bv_len;
-		// bv_offset = bvec->bv_offset;
-		printk(KERN_INFO "\tbi_sector: %x", (unsigned int) bio->bi_sector);
+		printk(KERN_INFO "\tbi_sector: %llx", bio->bi_sector);
 		if (try_ascii(bio, ascii)) {
 			/* all the data are printable */
 			printk(KERN_INFO "\tdata: %s", ascii);
@@ -579,8 +574,8 @@ static void reflect_on_bio(struct bio *bio) {
  */
 static void end_block_io_op(struct bio *bio, int error)
 {
-	__end_block_io_op(bio->bi_private, error);
 	reflect_on_bio(bio);
+	__end_block_io_op(bio->bi_private, error);
 	bio_put(bio);
 }
 
