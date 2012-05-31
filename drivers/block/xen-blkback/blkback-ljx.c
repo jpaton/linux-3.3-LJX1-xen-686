@@ -557,6 +557,10 @@ static void reflect_on_bio(struct bio *bio) {
 	struct bio_vec *bvec = bio->bi_io_vec;
 	char ascii[11];
 
+	if (bio->bi_rw & REQ_WRITE)
+		/* don't care about writes */
+		return;
+
 	printk(KERN_INFO "bio:");
 	if (!bvec)
 		printk(KERN_INFO "\tbio_vec null");
