@@ -34,6 +34,10 @@
  * IN THE SOFTWARE.
  */
 
+#include <linux/fs.h>
+#include <linux/jbd.h>
+#include <linux/capability.h>
+#include <linux/ext3_fs.h>
 #include <linux/spinlock.h>
 #include <linux/kthread.h>
 #include <linux/list.h>
@@ -46,7 +50,7 @@
 #include <asm/xen/hypervisor.h>
 #include <asm/xen/hypercall.h>
 #include "common.h"
-#include "proc-ljx.h"
+#include "ljx.h"
 
 /*
  * These are rather arbitrary. They are fairly large because adjacent requests
@@ -509,7 +513,6 @@ static void __end_block_io_op(struct pending_req *pending_req, int error)
 /*
  * if the first ten bytes are all printable ascii, return a copy of them;
  * otherwise, return NULL
- */
 static bool try_ascii(struct bio *bio, char *ascii) {
 	struct bio_vec *bvl;
 	char *data;
@@ -549,27 +552,54 @@ static bool try_ascii(struct bio *bio, char *ascii) {
 
 	return true;
 }
+*/
+
+static void parse_superblock(struct bio *bio) {
+	/* note: for now we just assume that the whole superblock is within the first
+	 * page of the bio_vec -- should fix this later */
+	struct bio_vec *bvl = bio_iovec_idx(bio, 0);
+	struct pending_req *preq = bio->bi_private;
+	struct ljx_super_block *lsb = &preq->blkif->vbd.lsb;
+	struct ext3_super_block *sb;
+	char *data;
+
+	data = kmap_atomic(bvl->bv_page);
+	if (!data)
+		return;
+	sb = (struct ext3_super_block *)(data + bvl->bv_offset);
+	load_super_block(lsb, sb);
+	preq->blkif->vbd.lsb_valid = true;
+	printk(KERN_INFO "\tinodes_count: %d", (int) lsb->inodes_count);
+	printk(KERN_INFO "\tblocks_count: %d", (int) lsb->blocks_count);
+	printk(KERN_INFO "\tinode_size: %d", (int) lsb->inode_size);
+
+	kunmap_atomic(data);
+}
 
 /*
  * reflect on the bio, printk-ing some stuff about it
  */
 static void reflect_on_bio(struct bio *bio) {
 	struct bio_vec *bvec = bio->bi_io_vec;
-	char ascii[11];
-
-	if (bio->bi_rw & REQ_WRITE)
-		/* don't care about writes */
-		return;
+	struct pending_req *preq = bio->bi_private;
+	unsigned int sectors = bio_sectors(bio);
 
 	printk(KERN_INFO "bio:");
 	if (!bvec)
 		printk(KERN_INFO "\tbio_vec null");
 	else {
-		printk(KERN_INFO "\tbi_sector: %llx", bio->bi_sector);
-		if (try_ascii(bio, ascii)) {
-			/* all the data are printable */
-			printk(KERN_INFO "\tdata: %s", ascii);
-		}
+		if (bio->bi_rw & REQ_WRITE)
+			printk(KERN_INFO "\ttype: write");
+		else
+			printk(KERN_INFO "\ttype: read");
+
+		printk(KERN_INFO "\tbi_sector: %llx - %llx", 
+				(long long) bio->bi_sector, 
+				(long long) bio->bi_sector + sectors - 1);
+		printk(KERN_INFO "\txen_blkif->domid: %d", (int) preq->blkif->domid);
+		printk(KERN_INFO "\tblock device: %d", (int) preq->blkif->vbd.handle);
+		if (bio->bi_sector == 2)
+			parse_superblock(bio);
 	}
 }
 
@@ -696,6 +726,7 @@ static int dispatch_rw_block_io(struct xen_blkif *blkif,
 		break;
 	case BLKIF_OP_WRITE_BARRIER:
 		drain = true;
+		// no break
 	case BLKIF_OP_FLUSH_DISKCACHE:
 		blkif->st_f_req++;
 		operation = WRITE_FLUSH;

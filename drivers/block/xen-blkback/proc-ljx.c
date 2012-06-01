@@ -6,7 +6,7 @@
 #include <linux/list.h>
 #include <linux/spinlock.h>
 
-#include "proc-ljx.h"
+#include "ljx.h"
 
 #define DATA_SIZE 1024
 
