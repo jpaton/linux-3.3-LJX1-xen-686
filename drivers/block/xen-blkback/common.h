@@ -42,7 +42,6 @@
 #include <xen/interface/io/ring.h>
 #include <xen/interface/io/blkif.h>
 #include <xen/interface/io/protocols.h>
-#include "ljx.h"
 
 #define DRV_PFX "xen-blkback:"
 #define DPRINTK(fmt, args...)				\
@@ -166,7 +165,6 @@ struct xen_vbd {
 	sector_t			size;
 	bool				flush_support;
 	bool				discard_secure;
-	void 				*superblock;
 };
 
 struct backend_info;
