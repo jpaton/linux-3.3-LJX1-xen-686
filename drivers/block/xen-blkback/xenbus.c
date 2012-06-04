@@ -294,6 +294,7 @@ static void xen_vbd_free(struct xen_vbd *vbd)
 	if (vbd->bdev)
 		blkdev_put(vbd->bdev, vbd->readonly ? FMODE_READ : FMODE_WRITE);
 	vbd->bdev = NULL;
+	vbd->superblock = NULL;
 }
 
 static int xen_vbd_create(struct xen_blkif *blkif, blkif_vdev_t handle,
@@ -340,6 +341,8 @@ static int xen_vbd_create(struct xen_blkif *blkif, blkif_vdev_t handle,
 
 	if (q && blk_queue_secdiscard(q))
 		vbd->discard_secure = true;
+
+	vbd->superblock = NULL;
 
 	DPRINTK("Successful creation of handle=%04x (dom=%u)\n",
 		handle, blkif->domid);

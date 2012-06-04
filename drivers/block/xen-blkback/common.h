@@ -166,8 +166,7 @@ struct xen_vbd {
 	sector_t			size;
 	bool				flush_support;
 	bool				discard_secure;
-	struct ljx_ext3_super_block	lsb;
-	bool 				lsb_valid = false;
+	void 				*superblock;
 };
 
 struct backend_info;
