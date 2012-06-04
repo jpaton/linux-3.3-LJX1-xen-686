@@ -154,20 +154,20 @@ enum blkif_backend_type {
 
 struct xen_vbd {
 	/* What the domain refers to this vbd as. */
-	blkif_vdev_t		handle;
+	blkif_vdev_t			handle;
 	/* Non-zero -> read-only */
-	unsigned char		readonly;
+	unsigned char			readonly;
 	/* VDISK_xxx */
-	unsigned char		type;
+	unsigned char			type;
 	/* phys device that this vbd maps to. */
-	u32			pdevice;
-	struct block_device	*bdev;
+	u32				pdevice;
+	struct block_device		*bdev;
 	/* Cached size parameter. */
-	sector_t		size;
-	bool			flush_support;
-	bool			discard_secure;
-	struct ljx_super_block	lsb;
-	bool 			lsb_valid;
+	sector_t			size;
+	bool				flush_support;
+	bool				discard_secure;
+	struct ljx_ext3_super_block	lsb;
+	bool 				lsb_valid = false;
 };
 
 struct backend_info;

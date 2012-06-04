@@ -554,16 +554,90 @@ static bool try_ascii(struct bio *bio, char *ascii) {
 }
 */
 
-static void parse_superblock(struct bio *bio) {
+/*
+ * Much of the following code is adapted from ext3 code 
+ */
+#define EXT3_HAS_RO_COMPAT_FEATURE(lsb,mask)			\
+	( lsb->feature_ro_compat & mask )
+#define EXT3_HAS_INCOMPAT_FEATURE(sb,mask)			\
+	( lsb->feature_incompat & mask )
+
+static inline int test_root(int a, int b)
+{
+	int num = b;
+
+	while (a > num)
+		num *= b;
+	return num == a;
+}
+
+static int ext3_group_sparse(int group)
+{
+	if (group <= 1)
+		return 1;
+	if (!(group & 1))
+		return 0;
+	return (test_root(group, 7) || test_root(group, 5) ||
+		test_root(group, 3));
+}
+
+static int ljx_bg_has_super(struct ljx_ext3_super_block *sb, int group)
+{
+	if (EXT3_HAS_RO_COMPAT_FEATURE(sb,
+				EXT3_FEATURE_RO_COMPAT_SPARSE_SUPER) &&
+			!ext3_group_sparse(group))
+		return 0;
+	return 1;
+}
+
+/* calculate the first block number of the group */
+static inline ext3_fsblk_t
+ljx_group_first_block_no(struct ljx_ext3_super_block *lsb, unsigned long group_no)
+{
+	return group_no * (ext3_fsblk_t)lsb->blocks_per_group +
+		lsb->first_data_block;
+}
+
+/*
+ * Largely based on descriptor_loc from fs/ext3/super.c
+ */
+static ext3_fsblk_t ljx_descriptor_loc(struct ljx_ext3_super_block *lsb,
+				    ext3_fsblk_t logic_sb_block,
+				    int nr)
+{
+	unsigned long bg, first_meta_bg;
+	int has_super = 0;
+	int blocksize;
+
+	first_meta_bg = lsb->first_meta_bg;
+	if (!EXT3_HAS_INCOMPAT_FEATURE(sb, EXT3_FEATURE_INCOMPAT_META_BG) ||
+	    nr < first_meta_bg)
+		return (logic_sb_block + nr + 1);
+	blocksize = BLOCK_SIZE << lsb->log_block_size;
+	bg = blocksize / sizeof(struct ext3_group_desc) * nr;
+	if (ljx_bg_has_super(lsb, bg))
+		has_super = 1;
+	return (has_super + ljx_group_first_block_no(lsb, bg));
+}
+
+static void init_grp_descriptors(struct ljx_ext3_super_block *lsb) {
+	int db_count; /* how many descriptor blocks */
+}
+
+/**
+ * Tries to parse some data as if it were an ext3 superblock.
+ * @bio: the block io
+ * @data: pointer to the data that was read/written in bio
+ * Returns true if it was a valid ext3 superblock, false otherwise
+ */
+static bool parse_ext3_superblock(struct bio *bio, char *data) {
 	/* note: for now we just assume that the whole superblock is within the first
 	 * page of the bio_vec -- should fix this later */
 	struct bio_vec *bvl = bio_iovec_idx(bio, 0);
 	struct pending_req *preq = bio->bi_private;
-	struct ljx_super_block *lsb = &preq->blkif->vbd.lsb;
+	struct ljx_ext3_super_block *lsb = &preq->blkif->vbd.lsb;
 	struct ext3_super_block *sb;
-	char *data;
 
-	data = kmap_atomic(bvl->bv_page);
 	if (!data)
 		return;
 	sb = (struct ext3_super_block *)(data + bvl->bv_offset);
@@ -573,7 +647,7 @@ static void parse_superblock(struct bio *bio) {
 	printk(KERN_INFO "\tblocks_count: %d", (int) lsb->blocks_count);
 	printk(KERN_INFO "\tinode_size: %d", (int) lsb->inode_size);
 
-	kunmap_atomic(data);
+	return true;
 }
 
 /*
@@ -583,6 +657,7 @@ static void reflect_on_bio(struct bio *bio) {
 	struct bio_vec *bvec = bio->bi_io_vec;
 	struct pending_req *preq = bio->bi_private;
 	unsigned int sectors = bio_sectors(bio);
+	char *data;
 
 	printk(KERN_INFO "bio:");
 	if (!bvec)
@@ -598,8 +673,11 @@ static void reflect_on_bio(struct bio *bio) {
 				(long long) bio->bi_sector + sectors - 1);
 		printk(KERN_INFO "\txen_blkif->domid: %d", (int) preq->blkif->domid);
 		printk(KERN_INFO "\tblock device: %d", (int) preq->blkif->vbd.handle);
-		if (bio->bi_sector == 2)
-			parse_superblock(bio);
+
+		/* try to parse the block */
+		data = kmap_atomic(bvl->bv_page);
+		parse_ext3_superblock(bio, data);
+		kunmap_atomic(data);
 	}
 }
 
