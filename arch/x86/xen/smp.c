@@ -474,8 +474,8 @@ static void xen_smp_send_reschedule(int cpu)
 	xen_send_IPI_one(cpu, XEN_RESCHEDULE_VECTOR);
 }
 
-static void xen_send_IPI_mask(const struct cpumask *mask,
-			      enum ipi_vector vector)
+void xen_send_IPI_mask(const struct cpumask *mask, 
+		int vector)
 {
 	unsigned cpu;
 
@@ -502,6 +502,38 @@ static void xen_smp_send_call_function_single_ipi(int cpu)
 {
 	xen_send_IPI_mask(cpumask_of(cpu),
 			  XEN_CALL_FUNCTION_SINGLE_VECTOR);
+}
+
+void xen_send_IPI_all(int vector)
+{
+	xen_send_IPI_mask(cpu_online_mask, vector);
+}
+
+void xen_send_IPI_self(int vector)
+{
+	xen_send_IPI_one(smp_processor_id(), vector);
+}
+
+void xen_send_IPI_mask_allbutself(const struct cpumask *mask,
+	       int vector)
+{
+	unsigned cpu;
+	unsigned int this_cpu = smp_processor_id();
+	
+	if (!(num_online_cpus() > 1))
+		return;
+	
+	for_each_cpu_and(cpu, mask, cpu_online_mask) {
+		if (this_cpu == cpu)
+			continue;
+	
+		xen_smp_send_call_function_single_ipi(cpu);
+	}
+}
+
+void xen_send_IPI_allbutself(int vector)
+{
+	xen_send_IPI_mask_allbutself(cpu_online_mask, vector);
 }
 
 static irqreturn_t xen_call_function_interrupt(int irq, void *dev_id)

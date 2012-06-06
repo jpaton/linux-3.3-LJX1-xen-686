@@ -576,12 +576,14 @@ return_normal:
 		kgdb_roundup_cpus(flags);
 #endif
 
+#ifndef CONFIG_XEN
 	/*
 	 * Wait for the other CPUs to be notified and be waiting for us:
 	 */
 	while (kgdb_do_roundup && (atomic_read(&masters_in_kgdb) +
 				atomic_read(&slaves_in_kgdb)) != online_cpus)
 		cpu_relax();
+#endif
 
 	/*
 	 * At this point the primary processor is completely
